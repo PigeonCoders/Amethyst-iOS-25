@@ -96,18 +96,19 @@ NSError* saveJSONToFile(NSDictionary *dict, NSString *path) {
 }
 
 NSString* localize(NSString* key, NSString* comment) {
+    if (!key) return @"";
     NSString *value = NSLocalizedString(key, nil);
+    if (!value) value = @"";
     if (![NSLocale.preferredLanguages[0] isEqualToString:@"en"] && [value isEqualToString:key]) {
         NSString* path = [NSBundle.mainBundle pathForResource:@"en" ofType:@"lproj"];
         NSBundle* languageBundle = [NSBundle bundleWithPath:path];
-        value = [languageBundle localizedStringForKey:key value:nil table:nil];
-
-        if ([value isEqualToString:key]) {
-            value = [[NSBundle bundleWithIdentifier:@"com.apple.UIKit"] localizedStringForKey:key value:nil table:nil];
+        value = [languageBundle localizedStringForKey:key value:@"" table:nil];
+        if (!value || [value isEqualToString:key]) {
+            value = [[NSBundle bundleWithIdentifier:@"com.apple.UIKit"] localizedStringForKey:key value:@"" table:nil];
         }
     }
 
-    return value;
+    return value ?: @"";
 }
 
 void customNSLog(const char *file, int lineNumber, const char *functionName, NSString *format, ...)
@@ -188,7 +189,10 @@ void JIT26SendJITScript(NSString* script) {
 BOOL DeviceCanCreateRXMap(void) {
     // This is only guaranteed to be accurate when JIT is already enabled. Obviously this is only useful for vphone and similar internal environments where JIT is always enabled.
     uint32_t *map = mmap(NULL, getpagesize(), PROT_READ | PROT_WRITE, MAP_ANONYMOUS | MAP_SHARED, -1, 0);
-    assert(map != MAP_FAILED);
+    if (map == MAP_FAILED) {
+        NSLog(@"DeviceCanCreateRXMap: mmap failed: %s", strerror(errno));
+        return NO;
+    }
     *map = 0xFFFFFFFF;
     int ret = mprotect(map, getpagesize(), PROT_READ | PROT_EXEC) | mprotect(map, getpagesize(), PROT_READ | PROT_EXEC);
     munmap(map, getpagesize());

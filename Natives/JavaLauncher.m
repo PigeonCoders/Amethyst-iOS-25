@@ -13,6 +13,7 @@
 #include <unistd.h>
 
 #include "utils.h"
+#include "ZinkConfig.h"
 
 #import "ios_uikit_bridge.h"
 #import "JavaLauncher.h"
@@ -51,6 +52,9 @@ void init_loadDefaultEnv() {
     // Override OpenGL version to 4.1 for Zink
     setenv("MESA_GL_VERSION_OVERRIDE", "4.1", 1);
 
+    // Suppress [mvk-info] log spam (swapchain creation, etc.)
+    setenv("MVK_CONFIG_LOG_LEVEL", "2", 1);
+
     // Runs JVM in a separate thread
     setenv("HACK_IGNORE_START_ON_FIRST_THREAD", "1", 1);
 }
@@ -69,6 +73,82 @@ void init_loadCustomEnv() {
         NSString *value = [line substringFromIndex:range.location+range.length];
         setenv(key.UTF8String, value.UTF8String, 1);
         NSLog(@"[JavaLauncher] Added custom env variable: %@", line);
+    }
+}
+
+void init_loadMobileGluesConfig() {
+    NSString *renderer = [PLProfiles resolveKeyForCurrentProfile:@"renderer"];
+    BOOL usesMobileGlues = [renderer isEqualToString:@ RENDERER_NAME_MOBILEGLUES] ||
+        [renderer isEqualToString:@"auto"] ||
+        [renderer isEqualToString:@ RENDERER_NAME_VULKAN];
+
+    if (!usesMobileGlues) {
+        return;
+    }
+
+    NSString *mgDirPath = [NSString stringWithFormat:@"%s/MG", getenv("POJAV_HOME")];
+    setenv("MG_DIR_PATH", mgDirPath.UTF8String, 1);
+
+    NSMutableDictionary *config = [NSMutableDictionary dictionary];
+
+    // Set safe defaults for compatibility, then let user preferences override
+    config[@"enableExtGL43"] = @1;
+    config[@"enableExtDirectStateAccess"] = @1;
+    config[@"maxGlslCacheSize"] = @128;
+    config[@"customGLVersion"] = @0x030100;
+
+    id enableAngle = getPrefObject(@"mobileglues.enable_angle");
+    if (enableAngle) config[@"enableANGLE"] = [enableAngle boolValue] ? @1 : @0;
+
+    id enableNoError = getPrefObject(@"mobileglues.enable_no_error");
+    if (enableNoError) config[@"enableNoError"] = @([enableNoError intValue]);
+
+    id enableExtTimerQuery = getPrefObject(@"mobileglues.enable_ext_timer_query");
+    if (enableExtTimerQuery) config[@"enableExtTimerQuery"] = [enableExtTimerQuery boolValue] ? @1 : @0;
+
+    id enableExtComputeShader = getPrefObject(@"mobileglues.enable_ext_compute_shader");
+    if (enableExtComputeShader) config[@"enableExtComputeShader"] = [enableExtComputeShader boolValue] ? @1 : @0;
+
+    id enableExtDirectStateAccess = getPrefObject(@"mobileglues.enable_ext_direct_state_access");
+    if (enableExtDirectStateAccess) config[@"enableExtDirectStateAccess"] = [enableExtDirectStateAccess boolValue] ? @1 : @0;
+
+    id maxGlslCacheSize = getPrefObject(@"mobileglues.max_glsl_cache_size");
+    if (maxGlslCacheSize) config[@"maxGlslCacheSize"] = @([maxGlslCacheSize intValue]);
+
+    id multidrawMode = getPrefObject(@"mobileglues.multidraw_mode");
+    if (multidrawMode) config[@"multidrawMode"] = @([multidrawMode intValue]);
+
+    id angleDepthClearFixMode = getPrefObject(@"mobileglues.angle_depth_clear_fix_mode");
+    if (angleDepthClearFixMode) config[@"angleDepthClearFixMode"] = [angleDepthClearFixMode boolValue] ? @1 : @0;
+
+    id customGlVersion = getPrefObject(@"mobileglues.custom_gl_version");
+    if (customGlVersion) {
+        NSString *verStr = [customGlVersion description];
+        if ([verStr isEqualToString:@"3.0"]) config[@"customGLVersion"] = @0x030000;
+        else if ([verStr isEqualToString:@"3.1"]) config[@"customGLVersion"] = @0x030100;
+        else if ([verStr isEqualToString:@"3.2"]) config[@"customGLVersion"] = @0x030200;
+        else if ([verStr isEqualToString:@"3.3"]) config[@"customGLVersion"] = @0x030300;
+        else if ([verStr isEqualToString:@"4.0"]) config[@"customGLVersion"] = @0x040000;
+        else if ([verStr isEqualToString:@"4.1"]) config[@"customGLVersion"] = @0x040100;
+        else if ([verStr isEqualToString:@"4.2"]) config[@"customGLVersion"] = @0x040200;
+        else if ([verStr isEqualToString:@"4.3"]) config[@"customGLVersion"] = @0x040300;
+        else if ([verStr isEqualToString:@"4.4"]) config[@"customGLVersion"] = @0x040400;
+        else if ([verStr isEqualToString:@"4.5"]) config[@"customGLVersion"] = @0x040500;
+        else if ([verStr isEqualToString:@"4.6"]) config[@"customGLVersion"] = @0x040600;
+    }
+
+    id fsr1Setting = getPrefObject(@"mobileglues.fsr1_setting");
+    if (fsr1Setting) config[@"fsr1Setting"] = @([fsr1Setting intValue]);
+
+    NSError *error = nil;
+    NSData *jsonData = [NSJSONSerialization dataWithJSONObject:config options:NSJSONWritingPrettyPrinted error:&error];
+    if (jsonData) {
+        NSString *jsonString = [[NSString alloc] initWithData:jsonData encoding:NSUTF8StringEncoding];
+        [fm createDirectoryAtPath:mgDirPath withIntermediateDirectories:YES attributes:nil error:nil];
+        [jsonString writeToFile:[mgDirPath stringByAppendingPathComponent:@"config.json"] atomically:YES encoding:NSUTF8StringEncoding error:nil];
+        NSLog(@"[JavaLauncher] MobileGlues config written to %@/config.json", mgDirPath);
+    } else {
+        NSLog(@"[JavaLauncher] Failed to serialize MobileGlues config: %@", error);
     }
 }
 
@@ -106,6 +186,7 @@ int launchJVM(NSString *username, id launchTarget, int width, int height, int mi
 
     init_loadDefaultEnv();
     init_loadCustomEnv();
+    init_loadMobileGluesConfig();
 
     BOOL requiresTXMWorkaround = DeviceHasJITFlags(JIT_FLAG_FORCE_MIRRORED | JIT_FLAG_HAS_TXM);
     BOOL jit26AlwaysAttached = getPrefBool(@"debug.debug_always_attached_jit");
@@ -170,10 +251,20 @@ int launchJVM(NSString *username, id launchTarget, int width, int height, int mi
             defaultJRETag = @"1_17_newer";
         }
 
-        // Setup POJAV_RENDERER
+        // Setup AMETHYST_RENDERER
         NSString *renderer = [PLProfiles resolveKeyForCurrentProfile:@"renderer"];
         NSLog(@"[JavaLauncher] RENDERER is set to %@\n", renderer);
-        setenv("POJAV_RENDERER", renderer.UTF8String, 1);
+        setenv("AMETHYST_RENDERER", renderer.UTF8String, 1);
+
+        // Apply Zink-specific environment variables if Zink renderer is selected
+        if ([renderer hasPrefix:@"libOSMesa"]) {
+            [ZinkConfig applyZinkEnvironmentFromPreferences];
+            // Show active config summary as a console-readable env var + log
+            NSString *configSummary = [ZinkConfig activeConfigSummary];
+            NSLog(@"[ZinkConfig] ========== Zink Renderer Active ==========");
+            NSLog(@"[ZinkConfig] %@", configSummary);
+            setenv("ZINK_ACTIVE_CONFIG", configSummary.UTF8String, 1);
+        }
         // Setup gameDir
         gameDir = [NSString stringWithFormat:@"%s/instances/%@/%@",
             getenv("POJAV_HOME"), getPrefObject(@"general.game_directory"),
@@ -246,7 +337,7 @@ int launchJVM(NSString *username, id launchTarget, int width, int height, int mi
     margv[++margc] = "-Dlog4j2.formatMsgNoLookups=true";
 
     // Preset OpenGL libname
-    const char *glLibName = getenv("POJAV_RENDERER");
+    const char *glLibName = getenv("AMETHYST_RENDERER");
     if (glLibName) {
         if (!strcmp(glLibName, "auto")) {
             // workaround only applies to 1.20.2+
@@ -270,6 +361,11 @@ int launchJVM(NSString *username, id launchTarget, int width, int height, int mi
         // a GL entry point (compat code, shader build, etc.) MobileGlues can
         // route it through Vulkan rather than crashing like a context-less
         // gl4es would.
+        if (strcmp(glLibName, RENDERER_NAME_VULKAN) == 0) {
+            setenv("MVK_CONFIG_RESUME_LOST_DEVICE", "1", 1);
+            setenv("MVK_CONFIG_SYNCHRONOUS_QUEUE_SUBMITS", "1", 1);
+            setenv("MVK_CONFIG_PREFILL_METAL_COMMAND_BUFFERS", "1", 1);
+        }
         const char *openglLibName = (strcmp(glLibName, RENDERER_NAME_VULKAN) == 0)
             ? RENDERER_NAME_MOBILEGLUES
             : glLibName;
@@ -301,18 +397,24 @@ int launchJVM(NSString *username, id launchTarget, int width, int height, int mi
     margv[++margc] = "-XX:+UnlockExperimentalVMOptions";
     margv[++margc] = "-XX:+DisablePrimordialThreadGuardPages";
 
-    // On iOS 26, use mirror mapped JIT by default — but only if the libjvm
-    // supports it. Our iOS-built JDK 25 (jre25-ios-v1) does NOT include the
-    // mirror_mapping HotSpot patch yet, so passing this flag makes the JVM
-    // bail out with "Unrecognized VM option". Skip for Java 25 until we
-    // port the mirror_mapping changes (Phase 2).
+    // Use ParallelGC instead of G1GC. On mobile with limited heap (~922MB),
+    // G1GC's Full GC can pause the app for 1-2 minutes, causing the "freeze
+    // then resume" issue. ParallelGC is more efficient for small heaps and
+    // avoids stop-the-world compaction stalls on iOS.
+    margv[++margc] = "-XX:+UseParallelGC";
+    margv[++margc] = "-XX:ParallelGCThreads=2";
+
+    // On iOS 26+, use mirror mapped JIT for better code cache performance.
+    // JDK 25 (jre25-ios-v1) has a bug in MirrorMappedCodeCache that causes
+    // SIGBUS in ScavengableNMethods::register_nmethod during JIT compilation.
+    // jre25-ios-v2 is supposed to fix this, but keep the flag off for Java 25
+    // until v2 is confirmed stable across all devices.
     NSString *currentJavaHome = [NSString stringWithUTF8String:getenv("JAVA_HOME") ?: ""];
     BOOL isJava25Home = [currentJavaHome containsString:@"java-25"];
     if (@available(iOS 26.0, *)) {
-        // jre25-ios-v2 includes the mirror_mapping HotSpot patch, so we can
-        // enable the flag for Java 25 too. Older Java 25 builds (v1) lacked
-        // it; keeping the suffix check harmless since v2 supports the flag.
-        margv[++margc] = "-XX:+MirrorMappedCodeCache";
+        if (!isJava25Home) {
+            margv[++margc] = "-XX:+MirrorMappedCodeCache";
+        }
     }
 
     // Disable Forge 1.16.x early progress window
