@@ -401,7 +401,7 @@ static NSString *contentTypeForPath(NSString *path) {
     NSDictionary *bundle = NSBundle.mainBundle.infoDictionary;
     const char *home = getenv("POJAV_HOME") ?: "";
     const char *gameDir = getenv("POJAV_GAME_DIR") ?: "";
-    const char *renderer = getenv("POJAV_RENDERER") ?: "";
+    const char *renderer = getenv("AMETHYST_RENDERER") ?: "";
 
     struct statfs st;
     statfs("/var/mobile", &st);
