@@ -1,6 +1,6 @@
 **iOS 27 BETA IS NOT SUPPORTED!**
 
-**Mojang is moving the windowing and keyboard system from GLFW to SDL3, and I need help in order to make Amethyst use this. If anyone is able to assist, there is a post about it in Issues, like always.**
+**Mojang is moving the windowing and keyboard system from GLFW to SDL3, and I need help in order to make Amethyst use this. If anyone is able to assist, there is a post about it in Issues like always.**
 
 **All the new versions of Minecraft work as of right now, however the newest snapshots don't. This is because of SDL3, which I am working on. The Keyboard is fixed! It is currently recommended to use Zinc renderer (Mesa 25 via MoltenVK) for best performance, or LTW renderer if you are playing 1.21.11 and below. If you want to use Vulkan, launch the game with MobileGlues or Zinc and change your Preferred Graphics Api to Vulkan.**
 
