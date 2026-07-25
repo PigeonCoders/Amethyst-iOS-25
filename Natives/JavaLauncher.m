@@ -76,16 +76,6 @@ void init_loadCustomEnv() {
     }
 }
 
-void init_loadMobileGluesConfig() {
-    NSString *renderer = [PLProfiles resolveKeyForCurrentProfile:@"renderer"];
-    BOOL usesMobileGlues = [renderer isEqualToString:@ RENDERER_NAME_MOBILEGLUES] ||
-        [renderer isEqualToString:@"auto"] ||
-        [renderer isEqualToString:@ RENDERER_NAME_VULKAN];
-
-    if (!usesMobileGlues) {
-        return;
-    }
-
     NSString *mgDirPath = [NSString stringWithFormat:@"%s/MG", getenv("POJAV_HOME")];
     setenv("MG_DIR_PATH", mgDirPath.UTF8String, 1);
 
