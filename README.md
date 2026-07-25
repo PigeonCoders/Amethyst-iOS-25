@@ -1,5 +1,3 @@
-**Users using iOS 26.5 or later seem to be experiencing a bug. I am currently looking into this. For now, users on iOS 26.5 and above should use version 2.0.1.**
-
 **iOS 27 BETA IS NOT SUPPORTED!**
 
 **Mojang is moving the windowing and keyboard system from GLFW to SDL3, and I need help in order to make Amethyst use this. If anyone is able to assist, there is a post about it in Issues like always.**
