@@ -701,10 +701,17 @@ static GameSurfaceView* pojavWindow;
 - (void)registerMouseCallbacks:(GCMouse *)mouse {
     NSLog(@"Input: Got mouse %@", mouse);
     mouse.mouseInput.mouseMovedHandler = ^(GCMouseInput * _Nonnull mouse, float deltaX, float deltaY) {
-        // Always forward mouse movement to the game.
-        // When pointer is locked (in-game grabbing), deltaX/deltaY are true deltas.
-        // When pointer is NOT locked (menu, or Bluetooth mouse before lock activates),
-        // we still send the delta so the virtual mouse or cursor can move.
+        // Only forward mouse movement while grabbing (in-game). When the pointer is
+        // NOT locked (pause menu, Esc pressed), relative deltas would race with the
+        // absolute coordinates from UIHover and make the menu cursor unusable, while
+        // the unlocked system pointer grabs the drag gestures. The menu is driven
+        // exclusively by UIHover absolute coordinates.
+        // Note: we intentionally avoid pointerLockState.locked here because it is
+        // broken on iOS 27 (issue #288), isGrabbing mirrors the same state and is
+        // set from glfwSetInputMode(GLFW_CURSOR_DISABLED) via nativeSetGrabbing.
+        if (!isGrabbing) {
+            return;
+        }
         [self sendTouchPoint:CGPointMake(deltaX, -deltaY) withEvent:ACTION_MOVE_MOTION];
     };
 
