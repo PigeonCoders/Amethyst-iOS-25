@@ -44,6 +44,7 @@ static GameSurfaceView* pojavWindow;
 
 @property(nonatomic) UILongPressGestureRecognizer* longPressGesture, *longPressTwoGesture;
 @property(nonatomic) UITapGestureRecognizer *tapGesture, *doubleTapGesture;
+@property(nonatomic) UIHoverGestureRecognizer *hoverGesture;
 
 @property(nonatomic) id mouseConnectCallback, mouseDisconnectCallback;
 @property(nonatomic) id controllerConnectCallback, controllerDisconnectCallback;
@@ -134,6 +135,7 @@ static GameSurfaceView* pojavWindow;
     
     UIHoverGestureRecognizer *hoverGesture = [[NSClassFromString(@"UIHoverGestureRecognizer") alloc] initWithTarget:self action:@selector(surfaceOnHover:)];
     [self.touchView addGestureRecognizer:hoverGesture];
+    self.hoverGesture = hoverGesture;
 
     self.tapGesture = [[UITapGestureRecognizer alloc]
         initWithTarget:self action:@selector(surfaceOnClick:)];
@@ -472,6 +474,10 @@ static GameSurfaceView* pojavWindow;
         self.mousePointerView.frame = virtualMouseFrame;
     }
     self.scrollPanGesture.enabled = !isGrabbing;
+    // While grabbing (in-game), the system pointer must be locked and hidden. An
+    // active UIHoverGestureRecognizer keeps the pointer in "hover interaction" mode
+    // which prevents pointer lock evaluation on iPadOS 18, so disable it in-game.
+    self.hoverGesture.enabled = !isGrabbing;
     self.mousePointerView.hidden = isGrabbing || !virtualMouseEnabled;
     [self setNeedsUpdateOfPrefersPointerLocked];
 
@@ -712,6 +718,11 @@ static GameSurfaceView* pojavWindow;
         if (!isGrabbing) {
             return;
         }
+        // Pointer moves only arrive here while grabbing; the pointer is on screen
+        // right now, so force the system to re-evaluate prefersPointerLocked. The
+        // passive evaluation is skipped on iPadOS 18 when the pointer never gets a
+        // chance to trigger it, leaving the system cursor visible in-game.
+        [self setNeedsUpdateOfPrefersPointerLocked];
         [self sendTouchPoint:CGPointMake(deltaX, -deltaY) withEvent:ACTION_MOVE_MOTION];
     };
 
