@@ -419,6 +419,7 @@ JNIEXPORT jstring JNICALL Java_org_lwjgl_glfw_CallbackBridge_nativeClipboard(JNI
 }
 
 JNIEXPORT void JNICALL Java_org_lwjgl_glfw_CallbackBridge_nativeSetGrabbing(JNIEnv* env, jclass clazz, jboolean grabbing, jfloat xset, jfloat yset) {
+    NSLog(@"PointerLock: nativeSetGrabbing(%d)", grabbing);
     isGrabbing = grabbing;
 
     dispatch_async(dispatch_get_main_queue(), ^{

@@ -207,21 +207,21 @@ static GameSurfaceView* pojavWindow;
 
     [KeyboardInput initKeycodeTable];
     self.mouseConnectCallback = [[NSNotificationCenter defaultCenter] addObserverForName:GCMouseDidConnectNotification object:nil queue:[NSOperationQueue mainQueue] usingBlock:^(NSNotification *note) {
-        NSLog(@"Input: Mouse connected!");
+        NSLog(@"Input: Mouse connected! (GCMouse count=%lu)", (unsigned long)GCMouse.mice.count);
         GCMouse* mouse = note.object;
         [self registerMouseCallbacks:mouse];
         self.mousePointerView.hidden = isGrabbing || !virtualMouseEnabled;
-        [self setNeedsUpdateOfPrefersPointerLocked];
+        [self updatePointerLock];
     }];
     self.mouseDisconnectCallback = [[NSNotificationCenter defaultCenter] addObserverForName:GCMouseDidDisconnectNotification object:nil queue:[NSOperationQueue mainQueue] usingBlock:^(NSNotification *note) {
-        NSLog(@"Input: Mouse disconnected!");
+        NSLog(@"Input: Mouse disconnected! (GCMouse count=%lu)", (unsigned long)GCMouse.mice.count);
         GCMouse* mouse = note.object;
         mouse.mouseInput.mouseMovedHandler = nil;
         mouse.mouseInput.leftButton.pressedChangedHandler = nil;
         mouse.mouseInput.middleButton.pressedChangedHandler = nil;
         mouse.mouseInput.rightButton.pressedChangedHandler = nil;
         [mouse.mouseInput.auxiliaryButtons makeObjectsPerformSelector:@selector(setPressedChangedHandler:) withObject:nil];
-        [self setNeedsUpdateOfPrefersPointerLocked];
+        [self updatePointerLock];
         if (getPrefBool(@"controll.hardware_hide")) {
             self.ctrlView.hidden = NO;
         }
@@ -275,7 +275,7 @@ static GameSurfaceView* pojavWindow;
 
 - (void)viewDidAppear:(BOOL)animated {
     [super viewDidAppear:animated];
-    [self setNeedsUpdateOfPrefersPointerLocked];
+    [self updatePointerLock];
 }
 
 - (void)updateAudioSettings {
@@ -479,10 +479,42 @@ static GameSurfaceView* pojavWindow;
     // which prevents pointer lock evaluation on iPadOS 18, so disable it in-game.
     self.hoverGesture.enabled = !isGrabbing;
     self.mousePointerView.hidden = isGrabbing || !virtualMouseEnabled;
-    [self setNeedsUpdateOfPrefersPointerLocked];
+    [self updatePointerLock];
 
     // Update buttons visibility
     [self updateControlHiddenState:NO];
+}
+
+- (void)updatePointerLock {
+    // Wants the system pointer locked whenever the game is grabbing with a
+    // connected mouse. prefersPointerLocked is only a preference: the system may
+    // reject the request, and isLocked updates with a delay (>3 run loops, ~20ms
+    // on iPadOS, see conath/iPadOSPointerContinuity). So when we want the lock but
+    // it is not yet active, keep re-requesting until it settles.
+    BOOL wantLock = (isGrabbing == JNI_TRUE) && GCMouse.mice.count > 0;
+    if (@available(iOS 18.0, *)) {
+        UIPointerLockState *state = self.view.window.windowScene.pointerLockState;
+        static BOOL sLockRequestActive = NO;
+        if (wantLock && !state.locked) {
+            if (!sLockRequestActive) {
+                NSLog(@"PointerLock: requesting lock (isGrabbing=%d mice=%lu locked=%d)", isGrabbing, (unsigned long)GCMouse.mice.count, state.locked);
+                sLockRequestActive = YES;
+            }
+            [self setNeedsUpdateOfPrefersPointerLocked];
+            __weak typeof(self) weakSelf = self;
+            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 50 * NSEC_PER_MSEC), dispatch_get_main_queue(), ^{
+                [weakSelf updatePointerLock];
+            });
+        } else {
+            if (sLockRequestActive) {
+                NSLog(@"PointerLock: state settled (wantLock=%d locked=%d mice=%lu)", wantLock, state.locked, (unsigned long)GCMouse.mice.count);
+                sLockRequestActive = NO;
+            }
+            [self setNeedsUpdateOfPrefersPointerLocked];
+        }
+    } else {
+        [self setNeedsUpdateOfPrefersPointerLocked];
+    }
 }
 
 - (void)launchMinecraft {
